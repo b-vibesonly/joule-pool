@@ -58,7 +58,12 @@ A simple Python-based Bitcoin solo mining pool that connects to a local Bitcoin 
 
 ## Configuration
 
-1. Edit `config.ini` with your Bitcoin Core RPC credentials:
+1. Create a configuration file by copying the sample:
+   ```
+   cp config.ini.sample config.ini
+   ```
+
+2. Edit `config.ini` with your Bitcoin Core RPC credentials:
 
 ```ini
 [bitcoind]
