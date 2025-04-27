@@ -1,0 +1,5 @@
+python-bitcoinrpc>=1.0
+twisted>=22.10.0
+jsonrpclib-pelix>=0.4.3
+argparse>=1.4.0
+configparser>=5.3.0
