@@ -86,6 +86,9 @@ class StratumProtocol(Protocol):
         
         logger.debug(f"Received method: {method}, params: {params}, id: {message_id}")
         
+        # Record the method name from miner to pool
+        self.factory.stats.record_miner_to_pool_method(method, params)
+        
         try:
             if method == 'mining.subscribe':
                 self.handle_subscribe(message_id, params)
@@ -326,6 +329,9 @@ class StratumProtocol(Protocol):
             "method": method,
             "params": params
         }
+        
+        # Record the method name from pool to miner
+        self.factory.stats.record_pool_to_miner_method(method, params)
         
         self.send_json(notification)
     

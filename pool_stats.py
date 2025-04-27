@@ -28,6 +28,13 @@ class PoolStats:
         self.clients = {}
         self.lock = threading.RLock()
         
+        # Track last stratum method names
+        self.last_pool_to_miner_method = ""
+        self.last_miner_to_pool_method = ""
+        
+        # Track last 20 stratum commands with timestamps and sender info
+        self.stratum_command_history = deque(maxlen=20)
+        
         # Start hashrate calculation thread
         self.update_thread = threading.Thread(target=self._update_hashrate, daemon=True)
         self.update_thread.start()
@@ -104,6 +111,35 @@ class PoolStats:
             if worker_name in self.clients:
                 # We don't actually delete the client to keep historical data
                 self.clients[worker_name]['active'] = False
+    
+    def record_pool_to_miner_method(self, method_name, params=None):
+        """Record the last method name sent from pool to miner"""
+        with self.lock:
+            self.last_pool_to_miner_method = method_name
+            # Add to command history with timestamp and sender info
+            self.stratum_command_history.append({
+                'timestamp': time.time(),
+                'sender': 'pool',
+                'method': method_name,
+                'params': params
+            })
+    
+    def record_miner_to_pool_method(self, method_name, params=None):
+        """Record the last method name sent from miner to pool"""
+        with self.lock:
+            self.last_miner_to_pool_method = method_name
+            # Add to command history with timestamp and sender info
+            self.stratum_command_history.append({
+                'timestamp': time.time(),
+                'sender': 'miner',
+                'method': method_name,
+                'params': params
+            })
+    
+    def get_stratum_command_history(self):
+        """Get the history of stratum commands"""
+        with self.lock:
+            return list(self.stratum_command_history)
     
     def calculate_hashrate(self, window_seconds=300):
         """Calculate the current hashrate based on shares in the last window_seconds"""
@@ -224,7 +260,10 @@ class PoolStats:
                 'invalid_shares': self.shares['invalid'],
                 'blocks_found': self.blocks_found,
                 'connected_miners': active_miners,
-                'uptime': current_time - self.start_time
+                'uptime': current_time - self.start_time,
+                'last_pool_to_miner_method': self.last_pool_to_miner_method,
+                'last_miner_to_pool_method': self.last_miner_to_pool_method,
+                'stratum_command_history': self.get_stratum_command_history()
             }
     
     @staticmethod

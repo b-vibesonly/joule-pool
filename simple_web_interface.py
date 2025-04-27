@@ -34,7 +34,6 @@ class JSONStatsResource(resource.Resource):
                 'valid_shares': stats.get('shares', {}).get('valid', 0),
                 'invalid_shares': stats.get('shares', {}).get('invalid', 0),
                 'blocks_found': stats.get('blocks_found', 0),
-                'hashrate': stats.get('hashrate', 0),
                 'last_share_time': stats.get('last_share_time', 0)
             }
         
@@ -73,33 +72,103 @@ class PoolStatsPage(resource.Resource):
         # Get worker stats
         worker_stats = self.factory.stats.get_worker_stats()
         
-        # Format worker stats as HTML table rows
-        worker_rows = ""
-        for worker, stats in worker_stats.items():
-            worker_rows += f"""
-            <tr>
-                <td>{worker}</td>
-                <td>{stats.get('shares', {}).get('valid', 0)}</td>
-                <td>{stats.get('shares', {}).get('invalid', 0)}</td>
-                <td>{stats.get('blocks_found', 0)}</td>
-                <td>{stats.get('hashrate', 0):.2f} H/s</td>
-                <td>{datetime.fromtimestamp(stats.get('last_share_time', 0)).strftime('%Y-%m-%d %H:%M:%S') if stats.get('last_share_time', 0) > 0 else 'Never'}</td>
-            </tr>
-            """
-        
-        # Get current job information
-        current_job_info = "No active job"
+        # Get current job information to extract block number
+        block_number = "Unknown"
         if self.factory.jobs:
             # Get the latest job
             job_id = max(self.factory.jobs.keys())
             job = self.factory.jobs[job_id]
+            block_number = job.get('height', 'Unknown')
+        
+        # Get the reward address (last 4 characters)
+        reward_address = "Unknown"
+        full_reward_address = "Unknown"
+        
+        if hasattr(self.factory, 'pool_address') and self.factory.pool_address:
+            full_address = self.factory.pool_address
+            # Mask the middle characters, keeping first 2 and last 2
+            if len(full_address) > 4:
+                full_reward_address = full_address[:2] + '*' * (len(full_address) - 4) + full_address[-2:]
+            else:
+                full_reward_address = full_address
+            reward_address = full_address[-4:] if len(full_address) >= 4 else full_address
+        elif pool_stats.get('reward_address'):
+            full_address = pool_stats.get('reward_address')
+            # Mask the middle characters, keeping first 2 and last 2
+            if len(full_address) > 4:
+                full_reward_address = full_address[:2] + '*' * (len(full_address) - 4) + full_address[-2:]
+            else:
+                full_reward_address = full_address
+            reward_address = full_address[-4:] if len(full_address) >= 4 else full_address
+        
+        # Format worker stats as HTML table rows
+        worker_rows = ""
+        for worker, stats in worker_stats.items():
+            # Only show workers with 1 or more valid shares
+            if stats.get('shares', {}).get('valid', 0) < 1:
+                continue
+                
+            # Calculate time since last share
+            time_since_last_share = "Never"
+            if stats.get('last_share_time', 0) > 0:
+                seconds_since = time.time() - stats.get('last_share_time', 0)
+                time_since_last_share = f"{int(seconds_since)} seconds"
+                if seconds_since >= 60:
+                    minutes = int(seconds_since / 60)
+                    seconds = int(seconds_since % 60)
+                    time_since_last_share = f"{minutes}m {seconds}s"
+                if seconds_since >= 3600:
+                    hours = int(seconds_since / 3600)
+                    minutes = int((seconds_since % 3600) / 60)
+                    time_since_last_share = f"{hours}h {minutes}m"
             
-            # Format job info
-            current_job_info = f"""
-            <p><strong>Current Job:</strong> {job_id}</p>
-            <p><strong>Height:</strong> {job.get('height', 'Unknown')}</p>
-            <p><strong>Difficulty:</strong> {bits_to_difficulty(job.get('bits', 0))}</p>
-            <p><strong>Transactions:</strong> {len(job.get('transactions', []))}</p>
+            worker_rows += f"""
+            <tr>
+                <td>{block_number}</td>
+                <td>{time_since_last_share}</td>
+                <td>{stats.get('shares', {}).get('valid', 0)}</td>
+                <td>{reward_address}</td>
+            </tr>
+            """
+        
+        # Format stratum command history
+        command_history_rows = ""
+        for cmd in pool_stats.get('stratum_command_history', [])[:5]:
+            timestamp = datetime.fromtimestamp(cmd.get('timestamp', 0)).strftime('%H:%M:%S')
+            sender = cmd.get('sender', 'unknown')
+            method = cmd.get('method', 'unknown')
+            params = cmd.get('params', None)
+            
+            # Format parameters as a string, truncate if too long
+            params_str = ""
+            if params:
+                try:
+                    # Special handling for mining.submit to exclude the first parameter (worker name/address)
+                    if method == 'mining.submit' and isinstance(params, list) and len(params) > 1:
+                        # Create a copy of params without the first element
+                        filtered_params = params[1:]
+                        params_str = str(filtered_params)
+                    elif isinstance(params, list) and len(params) > 0:
+                        params_str = str(params)
+                    elif isinstance(params, dict) and len(params) > 0:
+                        params_str = str(params)
+                    
+                    # Truncate if too long
+                    if len(params_str) > 50:
+                        params_str = params_str[:47] + "..."
+                except:
+                    params_str = "Error formatting params"
+            
+            # Determine row class based on sender
+            row_class = "miner-command" if sender == "miner" else "pool-command"
+            
+            command_history_rows += f"""
+            <tr class="{row_class}">
+                <td>{timestamp}</td>
+                <td>{sender}</td>
+                <td>{method}</td>
+                <td>{params_str}</td>
+            </tr>
             """
         
         # Create HTML directly
@@ -108,46 +177,25 @@ class PoolStatsPage(resource.Resource):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bitcoin Solo Mining Pool - Statistics</title>
+    <title>Mining Dashboard</title>
     <style>
         body {{
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             line-height: 1.6;
-            color: #333;
+            color: #f0f0f0;
             max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
-            background-color: #f5f5f5;
+            background-color: #0c0c0c;
         }}
         h1, h2, h3 {{
             color: #0066cc;
         }}
         .card {{
-            background: white;
+            background: #0c0c0c;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             padding: 20px;
             margin-bottom: 20px;
-        }}
-        .stats-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 15px;
-        }}
-        .stat-box {{
-            background: #f9f9f9;
-            border-radius: 4px;
-            padding: 15px;
-            text-align: center;
-        }}
-        .stat-value {{
-            font-size: 24px;
-            font-weight: bold;
-            color: #0066cc;
-        }}
-        .stat-label {{
-            font-size: 14px;
-            color: #666;
         }}
         table {{
             width: 100%;
@@ -156,26 +204,14 @@ class PoolStatsPage(resource.Resource):
         th, td {{
             padding: 12px;
             text-align: left;
-            border-bottom: 1px solid #ddd;
+            border-bottom: 1px solid #333;
         }}
         th {{
-            background-color: #f2f2f2;
+            background-color: #252525;
+            color: #0066cc;
         }}
         tr:hover {{
-            background-color: #f5f5f5;
-        }}
-        .refresh-button {{
-            background-color: #0066cc;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            margin-bottom: 20px;
-        }}
-        .refresh-button:hover {{
-            background-color: #0052a3;
+            background-color: #252525;
         }}
         .header {{
             display: flex;
@@ -186,124 +222,432 @@ class PoolStatsPage(resource.Resource):
         .auto-refresh {{
             display: flex;
             align-items: center;
+            color: #f0f0f0;
         }}
         .auto-refresh label {{
             margin-right: 10px;
         }}
+        .auto-refresh select {{
+            background-color: #333;
+            color: #f0f0f0;
+            border: 1px solid #444;
+            padding: 5px;
+        }}
         .footer {{
             text-align: center;
             margin-top: 30px;
-            color: #666;
+            color: #888;
             font-size: 14px;
+            display: none;
+        }}
+        .stats-container {{
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+            gap: 40px;
+            margin-bottom: 30px;
+            margin-top: 60px;
+        }}
+        .stat-cube {{
+            width: 200px;
+            height: 200px;
+            position: relative;
+            perspective: 1200px;
+        }}
+        .cube {{
+            width: 100%;
+            height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.8s;
+            transform: rotateX(15deg) rotateY(15deg);
+        }}
+        .cube-face {{
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(40, 40, 40, 0.9);
+            border: 2px solid #0066cc;
+            backface-visibility: hidden;
+        }}
+        /* Create all six faces of the cube */
+        .cube-face.front {{
+            transform: translateZ(100px);
+        }}
+        .cube-face.back {{
+            transform: rotateY(180deg) translateZ(100px);
+        }}
+        .cube-face.right {{
+            transform: rotateY(90deg) translateZ(100px);
+            opacity: 0.3;
+        }}
+        .cube-face.left {{
+            transform: rotateY(-90deg) translateZ(100px);
+            opacity: 0.3;
+        }}
+        .cube-face.top {{
+            transform: rotateX(90deg) translateZ(100px);
+            opacity: 0.3;
+        }}
+        .cube-face.bottom {{
+            transform: rotateX(-90deg) translateZ(100px);
+            opacity: 0.3;
+        }}
+        /* Add cube edges */
+        .cube::after {{
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            border: 2px solid rgba(0, 102, 204, 0.5);
+            box-sizing: border-box;
+            transform: translateZ(-100px);
+        }}
+        /* Add color change animation */
+        @keyframes colorPulse {{
+            0% {{ border-color: var(--highlight-color); }}
+            50% {{ border-color: var(--highlight-color); box-shadow: 0 0 15px var(--highlight-color); }}
+            100% {{ border-color: var(--highlight-color); }}
+        }}
+        .color-change {{
+            animation: colorPulse 1.5s ease-in-out;
+        }}
+        /* Hover effect */
+        .stat-cube:hover .cube {{
+            transform: rotateX(25deg) rotateY(25deg);
+        }}
+        .stat-value {{
+            font-size: 32px;
+            font-weight: bold;
+            color: #0066cc;
+            margin-bottom: 15px;
+        }}
+        .stat-label {{
+            font-size: 16px;
+            color: #ccc;
+            font-weight: 500;
+        }}
+        .reward-address-title {{
+            font-size: 20px;
+            color: #0066cc;
+            margin-bottom: 15px;
+            text-align: center;
+            font-weight: normal;
+            font-family: 'Consolas', 'Courier New', monospace;
+        }}
+        /* Terminal-style command history */
+        .terminal-history {{
+            background-color: #0c0c0c;
+            border: none;
+            border-radius: 0;
+            font-family: 'Consolas', 'Courier New', monospace;
+            color: #f0f0f0;
+            padding: 10px;
+            position: relative;
+            overflow: hidden;
+        }}
+        .stratum-history-table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            background-color: #0c0c0c;
+            border: none;
+        }}
+        .stratum-history-table th, 
+        .stratum-history-table td {{
+            padding: 6px;
+            text-align: left;
+            border: none;
+        }}
+        .stratum-history-table th {{
+            background-color: #1a1a1a;
+            font-size: 13px;
+            color: #0066cc;
+            border: none;
+        }}
+        .stratum-history-table tr {{
+            transition: background-color 0.3s;
+            border: none;
+        }}
+        .stratum-history-table tr.miner-command {{
+            background-color: #0066cc;
+            color: #000000;
+            font-weight: bold;
+        }}
+        .stratum-history-table tr.pool-command {{
+            background-color: #0c0c0c;
+            color: #0066cc;
+        }}
+        .new-row {{
+            animation: slideDown 0.5s ease-out;
+        }}
+        @keyframes slideDown {{
+            from {{ transform: translateY(-100%); opacity: 0; }}
+            to {{ transform: translateY(0); opacity: 1; }}
+        }}
+        .row-exit {{
+            animation: slideDownExit 0.5s ease-out;
+            animation-fill-mode: forwards;
+        }}
+        @keyframes slideDownExit {{
+            from {{ transform: translateY(0); opacity: 1; }}
+            to {{ transform: translateY(100%); opacity: 0; }}
+        }}
+        /* Typing effect */
+        .typing-effect {{
+            position: relative;
+            overflow: hidden;
+            border-right: 0.15em solid #0066cc;
+            white-space: nowrap;
+            animation: typing 0.5s steps(30, end), blink-caret 0.75s step-end infinite;
+        }}
+        
+        @keyframes typing {{
+            from {{ width: 0 }}
+            to {{ width: 100% }}
+        }}
+        
+        @keyframes blink-caret {{
+            from, to {{ border-color: transparent }}
+            50% {{ border-color: #0066cc }}
         }}
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>Bitcoin Solo Mining Pool</h1>
-        <div class="auto-refresh">
-            <label for="auto-refresh">Auto refresh:</label>
-            <select id="auto-refresh" onchange="setAutoRefresh()">
-                <option value="0">Off</option>
-                <option value="5" selected>5 seconds</option>
-                <option value="15">15 seconds</option>
-                <option value="30">30 seconds</option>
-                <option value="60">1 minute</option>
-            </select>
-        </div>
-    </div>
-    
-    <button class="refresh-button" onclick="location.reload()">Refresh Statistics</button>
-    
-    <div class="card">
-        <h2>Pool Information</h2>
-        <div class="stats-grid">
-            <div class="stat-box">
-                <div class="stat-value">Current Job</div>
-                <div class="stat-label">{current_job_info}</div>
-            </div>
-        </div>
+        <div></div>
+        <div></div>
     </div>
     
     <div class="card">
-        <h2>Pool Statistics</h2>
-        <div class="stats-grid">
-            <div class="stat-box">
-                <div class="stat-value">{pool_stats.get('hashrate', 0):.2f} H/s</div>
-                <div class="stat-label">Pool Hashrate</div>
+        <div class="stats-container">
+            <div class="stat-cube" id="block-number-cube">
+                <div class="cube">
+                    <div class="cube-face front">
+                        <div class="stat-value">{block_number}</div>
+                        <div class="stat-label">Block Number</div>
+                    </div>
+                    <div class="cube-face back">
+                        <div class="stat-value">{block_number}</div>
+                        <div class="stat-label">Block Number</div>
+                    </div>
+                    <div class="cube-face right"></div>
+                    <div class="cube-face left"></div>
+                    <div class="cube-face top"></div>
+                    <div class="cube-face bottom"></div>
+                </div>
             </div>
-            <div class="stat-box">
-                <div class="stat-value">{pool_stats.get('total_shares', 0)}</div>
-                <div class="stat-label">Total Shares</div>
+            
+            <div class="stat-cube" id="time-since-share-cube">
+                <div class="cube">
+                    <div class="cube-face front">
+                        <div class="stat-value" id="time-since-share-value">
+                            {time_since_last_share if 'time_since_last_share' in locals() else 'N/A'}
+                        </div>
+                        <div class="stat-label">Time Since Last Share</div>
+                    </div>
+                    <div class="cube-face back">
+                        <div class="stat-value" id="time-since-share-value-back">
+                            {time_since_last_share if 'time_since_last_share' in locals() else 'N/A'}
+                        </div>
+                        <div class="stat-label">Time Since Last Share</div>
+                    </div>
+                    <div class="cube-face right"></div>
+                    <div class="cube-face left"></div>
+                    <div class="cube-face top"></div>
+                    <div class="cube-face bottom"></div>
+                </div>
             </div>
-            <div class="stat-box">
-                <div class="stat-value">{pool_stats.get('valid_shares', 0)}</div>
-                <div class="stat-label">Valid Shares</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-value">{pool_stats.get('invalid_shares', 0)}</div>
-                <div class="stat-label">Invalid Shares</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-value">{pool_stats.get('blocks_found', 0)}</div>
-                <div class="stat-label">Blocks Found</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-value">{pool_stats.get('connected_miners', 0)}</div>
-                <div class="stat-label">Connected Miners</div>
+            
+            <div class="stat-cube" id="valid-shares-cube">
+                <div class="cube">
+                    <div class="cube-face front">
+                        <div class="stat-value">
+                            {stats.get('shares', {}).get('valid', 0) if 'stats' in locals() else pool_stats.get('valid_shares', 0)}
+                        </div>
+                        <div class="stat-label">Valid Shares</div>
+                    </div>
+                    <div class="cube-face back">
+                        <div class="stat-value">
+                            {stats.get('shares', {}).get('valid', 0) if 'stats' in locals() else pool_stats.get('valid_shares', 0)}
+                        </div>
+                        <div class="stat-label">Valid Shares</div>
+                    </div>
+                    <div class="cube-face right"></div>
+                    <div class="cube-face left"></div>
+                    <div class="cube-face top"></div>
+                    <div class="cube-face bottom"></div>
+                </div>
             </div>
         </div>
     </div>
     
     <div class="card">
-        <h2>Worker Statistics</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Worker</th>
-                    <th>Valid Shares</th>
-                    <th>Invalid Shares</th>
-                    <th>Blocks Found</th>
-                    <th>Hashrate</th>
-                    <th>Last Share</th>
-                </tr>
-            </thead>
-            <tbody>
-                {worker_rows}
-            </tbody>
-        </table>
+        <h2 class="reward-address-title">Reward Address: {full_reward_address}</h2>
+        <div class="terminal-history">
+            <table class="stratum-history-table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Sender</th>
+                        <th>Method</th>
+                        <th>Parameters</th>
+                    </tr>
+                </thead>
+                <tbody id="command-history-tbody">
+                    {command_history_rows}
+                </tbody>
+            </table>
+        </div>
     </div>
     
     <div class="footer">
-        <p>Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-        <p>Bitcoin Solo Mining Pool | <a href="/api">JSON API</a></p>
+        <!-- Footer content removed -->
     </div>
     
     <script>
-        let refreshInterval;
+        // Set fixed refresh interval of 5 seconds
+        let refreshInterval = setInterval(() => {{
+            fetch(window.location.href)
+                .then(response => response.text())
+                .then(html => {{
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    
+                    // Update each stat cube if value has changed
+                    updateCubeIfChanged('block-number-cube', doc);
+                    updateCubeIfChanged('time-since-share-cube', doc);
+                    updateCubeIfChanged('valid-shares-cube', doc);
+                    
+                    // Get new command history data
+                    const newHistoryRows = Array.from(doc.querySelectorAll('#command-history-tbody tr'));
+                    const currentHistoryRows = Array.from(document.querySelectorAll('#command-history-tbody tr'));
+                    
+                    // Check if there are new commands by comparing first row's content
+                    let hasNewCommands = false;
+                    
+                    if (newHistoryRows.length > 0 && currentHistoryRows.length > 0) {{
+                        // Compare the first row's text content
+                        hasNewCommands = newHistoryRows[0].textContent.trim() !== currentHistoryRows[0].textContent.trim();
+                    }} else if (newHistoryRows.length > 0) {{
+                        // We have new rows but no current rows
+                        hasNewCommands = true;
+                    }}
+                    
+                    // If we have new commands, update the display
+                    if (hasNewCommands) {{
+                        // Process one row at a time with delay
+                        const processNextRow = (index) => {{
+                            if (index >= Math.min(5, newHistoryRows.length)) return;
+                            
+                            // Clone the row from the new data
+                            const newRow = newHistoryRows[index].cloneNode(true);
+                            newRow.classList.add('new-row');
+                            
+                            // Insert at the top
+                            const tbody = document.querySelector('#command-history-tbody');
+                            tbody.insertBefore(newRow, tbody.firstChild);
+                            
+                            // If we have more than 5 rows, animate the last one out
+                            if (tbody.children.length > 5) {{
+                                const lastRow = tbody.children[tbody.children.length - 1];
+                                lastRow.classList.add('row-exit');
+                                
+                                // Remove after animation completes
+                                setTimeout(() => {{
+                                    if (lastRow.parentNode) {{
+                                        lastRow.parentNode.removeChild(lastRow);
+                                    }}
+                                }}, 500);
+                            }}
+                            
+                            // Process the next row after delay
+                            setTimeout(() => processNextRow(index + 1), 250);
+                        }};
+                        
+                        // Start processing rows
+                        processNextRow(0);
+                    }}
+                }});
+        }}, 5000);
         
-        function setAutoRefresh() {{
-            // Clear existing interval
-            if (refreshInterval) {{
-                clearInterval(refreshInterval);
-            }}
+        function updateCubeIfChanged(cubeId, newDoc) {{
+            const cube = document.getElementById(cubeId);
+            const cubeValue = cube.querySelector('.stat-value').textContent.trim();
+            const newValue = newDoc.getElementById(cubeId).querySelector('.stat-value').textContent.trim();
             
-            // Get selected refresh time
-            const refreshTime = document.getElementById('auto-refresh').value;
-            
-            // Set new interval if not disabled
-            if (refreshTime > 0) {{
-                refreshInterval = setInterval(() => {{
-                    location.reload();
-                }}, refreshTime * 1000);
+            if (cubeValue !== newValue) {{
+                const cubeElement = cube.querySelector('.cube');
+                
+                // Special handling for block number cube - color change instead of rotate
+                if (cubeId === 'block-number-cube') {{
+                    // Update value immediately
+                    cube.querySelector('.cube-face.front .stat-value').textContent = newValue;
+                    cube.querySelector('.cube-face.back .stat-value').textContent = newValue;
+                    
+                    // Generate random bright color
+                    const getRandomBrightColor = () => {{
+                        const hue = Math.floor(Math.random() * 360);
+                        return 'hsl(' + hue + ', 100%, 50%)';
+                    }};
+                    
+                    // Apply random color to all cube faces
+                    const randomColor = getRandomBrightColor();
+                    const faces = cube.querySelectorAll('.cube-face');
+                    
+                    // Set the highlight color as a CSS variable
+                    cubeElement.style.setProperty('--highlight-color', randomColor);
+                    
+                    // Apply color change to all faces
+                    faces.forEach(face => {{
+                        face.style.borderColor = randomColor;
+                    }});
+                    
+                    // Apply color change animation
+                    cubeElement.classList.add('color-change');
+                    
+                    // Remove animation class after it completes
+                    setTimeout(() => {{
+                        cubeElement.classList.remove('color-change');
+                        
+                        // Reset to default color after animation
+                        setTimeout(() => {{
+                            faces.forEach(face => {{
+                                face.style.borderColor = '#0066cc';
+                            }});
+                        }}, 1000);
+                    }}, 1500);
+                }} else {{
+                    // For other cubes, use random rotation
+                    // Generate random rotation values
+                    const randomX = Math.floor(Math.random() * 360) - 180;
+                    const randomY = Math.floor(Math.random() * 360) - 180;
+                    const randomZ = Math.floor(Math.random() * 90) - 45;
+                    
+                    // Apply random rotation animation
+                    cubeElement.style.transform = 'rotateX(' + randomX + 'deg) rotateY(' + randomY + 'deg) rotateZ(' + randomZ + 'deg)';
+                    
+                    // Update back face value
+                    setTimeout(() => {{
+                        cube.querySelector('.cube-face.back .stat-value').textContent = newValue;
+                        
+                        // Reset to original position after full rotation
+                        setTimeout(() => {{
+                            cubeElement.style.transform = 'rotateX(15deg) rotateY(15deg)';
+                            cube.querySelector('.cube-face.front .stat-value').textContent = newValue;
+                        }}, 800);
+                    }}, 400);
+                }}
             }}
         }}
-        
-        // Initialize auto-refresh
-        setAutoRefresh();
     </script>
 </body>
-</html>"""
+</html>
+"""
         
         return html.encode('utf-8')
 
