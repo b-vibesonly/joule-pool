@@ -32,8 +32,8 @@ class PoolStats:
         self.last_pool_to_miner_method = ""
         self.last_miner_to_pool_method = ""
         
-        # Track last 20 stratum commands with timestamps and sender info
-        self.stratum_command_history = deque(maxlen=20)
+        # Track last 10 stratum commands with timestamps and sender info
+        self.stratum_command_history = deque(maxlen=10)
         
         # Start hashrate calculation thread
         self.update_thread = threading.Thread(target=self._update_hashrate, daemon=True)

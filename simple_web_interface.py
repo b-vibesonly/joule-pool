@@ -313,7 +313,7 @@ class PoolStatsPage(resource.Resource):
             50% {{ border-color: var(--highlight-color); box-shadow: 0 0 15px var(--highlight-color); }}
             100% {{ border-color: var(--highlight-color); }}
         }}
-        .color-change {{
+        .color-change .cube-face {{
             animation: colorPulse 1.5s ease-in-out;
         }}
         /* Hover effect */
@@ -527,6 +527,9 @@ class PoolStatsPage(resource.Resource):
                     const newHistoryRows = Array.from(doc.querySelectorAll('#command-history-tbody tr'));
                     const currentHistoryRows = Array.from(document.querySelectorAll('#command-history-tbody tr'));
                     
+                    // Limit to 10 rows maximum
+                    const limitedNewRows = newHistoryRows.slice(0, 10);
+                    
                     // Check if there are new commands by comparing first row's content
                     let hasNewCommands = false;
                     
@@ -542,18 +545,18 @@ class PoolStatsPage(resource.Resource):
                     if (hasNewCommands) {{
                         // Process one row at a time with delay
                         const processNextRow = (index) => {{
-                            if (index >= Math.min(5, newHistoryRows.length)) return;
+                            if (index >= Math.min(10, limitedNewRows.length)) return;
                             
                             // Clone the row from the new data
-                            const newRow = newHistoryRows[index].cloneNode(true);
+                            const newRow = limitedNewRows[index].cloneNode(true);
                             newRow.classList.add('new-row');
                             
                             // Insert at the top
                             const tbody = document.querySelector('#command-history-tbody');
                             tbody.insertBefore(newRow, tbody.firstChild);
                             
-                            // If we have more than 5 rows, animate the last one out
-                            if (tbody.children.length > 5) {{
+                            // If we have more than 10 rows, animate the last one out
+                            if (tbody.children.length > 10) {{
                                 const lastRow = tbody.children[tbody.children.length - 1];
                                 lastRow.classList.add('row-exit');
                                 
@@ -585,42 +588,61 @@ class PoolStatsPage(resource.Resource):
                 
                 // Special handling for block number cube - color change instead of rotate
                 if (cubeId === 'block-number-cube') {{
-                    // Update value immediately
-                    cube.querySelector('.cube-face.front .stat-value').textContent = newValue;
-                    cube.querySelector('.cube-face.back .stat-value').textContent = newValue;
+                    // Static list of 20 bright colors that contrast well with black
+                    const brightColors = [
+                        '#FF0000', // Red
+                        '#00FF00', // Lime
+                        '#0000FF', // Blue
+                        '#FFFF00', // Yellow
+                        '#FF00FF', // Magenta
+                        '#00FFFF', // Cyan
+                        '#FF8000', // Orange
+                        '#8000FF', // Purple
+                        '#0080FF', // Azure
+                        '#FF0080', // Rose
+                        '#80FF00', // Chartreuse
+                        '#00FF80', // Spring Green
+                        '#FF3333', // Bright Red
+                        '#33FF33', // Bright Green
+                        '#3333FF', // Bright Blue
+                        '#FFFF33', // Bright Yellow
+                        '#FF33FF', // Bright Magenta
+                        '#33FFFF', // Bright Cyan
+                        '#FF5733', // Coral
+                        '#33FF57'  // Mint
+                    ];
                     
-                    // Generate random bright color
-                    const getRandomBrightColor = () => {{
-                        const hue = Math.floor(Math.random() * 360);
-                        return 'hsl(' + hue + ', 100%, 50%)';
-                    }};
+                    // Select a color from the list
+                    const randomIndex = Math.floor(Math.random() * brightColors.length);
+                    const selectedColor = brightColors[randomIndex];
                     
-                    // Apply random color to all cube faces
-                    const randomColor = getRandomBrightColor();
+                    // Apply selected color to all cube faces
                     const faces = cube.querySelectorAll('.cube-face');
-                    
-                    // Set the highlight color as a CSS variable
-                    cubeElement.style.setProperty('--highlight-color', randomColor);
-                    
-                    // Apply color change to all faces
                     faces.forEach(face => {{
-                        face.style.borderColor = randomColor;
+                        face.style.borderColor = selectedColor;
                     }});
                     
                     // Apply color change animation
                     cubeElement.classList.add('color-change');
                     
-                    // Remove animation class after it completes
+                    // Update value after a brief delay
                     setTimeout(() => {{
-                        cubeElement.classList.remove('color-change');
+                        // Update value
+                        cube.querySelector('.cube-face.front .stat-value').textContent = newValue;
+                        cube.querySelector('.cube-face.back .stat-value').textContent = newValue;
                         
-                        // Reset to default color after animation
+                        // Remove animation class after it completes
                         setTimeout(() => {{
-                            faces.forEach(face => {{
-                                face.style.borderColor = '#0066cc';
-                            }});
-                        }}, 1000);
-                    }}, 1500);
+                            cubeElement.classList.remove('color-change');
+                            
+                            // Reset to default color after animation
+                            setTimeout(() => {{
+                                faces.forEach(face => {{
+                                    face.style.borderColor = '#0066cc';
+                                }});
+                            }}, 1000);
+                        }}, 1500);
+                    }}, 100);
                 }} else {{
                     // For other cubes, use random rotation
                     // Generate random rotation values
