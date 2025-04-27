@@ -628,69 +628,11 @@ class PoolStatsPage(resource.Resource):
             const newValue = newDoc.getElementById(cubeId).querySelector('.stat-value').textContent.trim();
             
             if (cubeValue !== newValue) {{
-                const cubeElement = cube.querySelector('.cube');
-                
-                // Special handling for block number cube - color change instead of rotate
+                // Special handling for block number cube - no effects, just update value
                 if (cubeId === 'block-number-cube') {{
-                    // Static list of 20 bright colors that contrast well with black
-                    const brightColors = [
-                        '#FF0000', // Red
-                        '#00FF00', // Lime
-                        '#0000FF', // Blue
-                        '#FFFF00', // Yellow
-                        '#FF00FF', // Magenta
-                        '#00FFFF', // Cyan
-                        '#FF8000', // Orange
-                        '#8000FF', // Purple
-                        '#0080FF', // Azure
-                        '#FF0080', // Rose
-                        '#80FF00', // Chartreuse
-                        '#00FF80', // Spring Green
-                        '#FF3333', // Bright Red
-                        '#33FF33', // Bright Green
-                        '#3333FF', // Bright Blue
-                        '#FFFF33', // Bright Yellow
-                        '#FF33FF', // Bright Magenta
-                        '#33FFFF', // Bright Cyan
-                        '#FF5733', // Coral
-                        '#33FF57'  // Mint
-                    ];
-                    
-                    // Select a color from the list
-                    const randomIndex = Math.floor(Math.random() * brightColors.length);
-                    const selectedColor = brightColors[randomIndex];
-                    
-                    // Apply selected color to all cube faces
-                    const faces = cube.querySelectorAll('.cube-face');
-                    faces.forEach(face => {{
-                        face.style.borderColor = selectedColor;
-                    }});
-                    
-                    // Apply color change animation
-                    cubeElement.classList.add('color-change');
-                    
-                    // Apply 360-degree rotation to the entire cube
-                    cubeElement.classList.add('rotate360');
-                    
-                    // Update value after a brief delay
-                    setTimeout(() => {{
-                        // Update value
-                        cube.querySelector('.cube-face.front .stat-value').textContent = newValue;
-                        cube.querySelector('.cube-face.back .stat-value').textContent = newValue;
-                        
-                        // Remove animation classes after they complete
-                        setTimeout(() => {{
-                            cubeElement.classList.remove('color-change');
-                            cubeElement.classList.remove('rotate360');
-                            
-                            // Reset to default color after animation
-                            setTimeout(() => {{
-                                faces.forEach(face => {{
-                                    face.style.borderColor = '#0066cc';
-                                }});
-                            }}, 1000);
-                        }}, 1500);
-                    }}, 500);
+                    // Update value immediately
+                    cube.querySelector('.cube-face.front .stat-value').textContent = newValue;
+                    cube.querySelector('.cube-face.back .stat-value').textContent = newValue;
                 }} else {{
                     // For other cubes, use random rotation
                     // Generate random rotation values
@@ -699,7 +641,7 @@ class PoolStatsPage(resource.Resource):
                     const randomZ = Math.floor(Math.random() * 90) - 45;
                     
                     // Apply random rotation animation
-                    cubeElement.style.transform = 'rotateX(' + randomX + 'deg) rotateY(' + randomY + 'deg) rotateZ(' + randomZ + 'deg)';
+                    cube.querySelector('.cube').style.transform = 'rotateX(' + randomX + 'deg) rotateY(' + randomY + 'deg) rotateZ(' + randomZ + 'deg)';
                     
                     // Update back face value
                     setTimeout(() => {{
@@ -707,7 +649,7 @@ class PoolStatsPage(resource.Resource):
                         
                         // Reset to original position after full rotation
                         setTimeout(() => {{
-                            cubeElement.style.transform = 'rotateX(15deg) rotateY(15deg)';
+                            cube.querySelector('.cube').style.transform = 'rotateX(15deg) rotateY(15deg)';
                             cube.querySelector('.cube-face.front .stat-value').textContent = newValue;
                         }}, 800);
                     }}, 400);
