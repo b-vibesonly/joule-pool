@@ -313,9 +313,21 @@ class PoolStatsPage(resource.Resource):
             50% {{ border-color: var(--highlight-color); box-shadow: 0 0 15px var(--highlight-color); }}
             100% {{ border-color: var(--highlight-color); }}
         }}
+        
+        /* 360-degree rotation animation */
+        @keyframes rotate360 {{
+            0% {{ transform: rotateY(0deg); }}
+            100% {{ transform: rotateY(360deg); }}
+        }}
+        
+        .rotate360 {{
+            animation: rotate360 1.5s ease-in-out;
+        }}
+        
         .color-change .cube-face {{
             animation: colorPulse 1.5s ease-in-out;
         }}
+        
         /* Hover effect */
         .stat-cube:hover .cube {{
             transform: rotateX(25deg) rotateY(25deg);
@@ -625,15 +637,19 @@ class PoolStatsPage(resource.Resource):
                     // Apply color change animation
                     cubeElement.classList.add('color-change');
                     
+                    // Apply 360-degree rotation to the entire cube
+                    cubeElement.classList.add('rotate360');
+                    
                     // Update value after a brief delay
                     setTimeout(() => {{
                         // Update value
                         cube.querySelector('.cube-face.front .stat-value').textContent = newValue;
                         cube.querySelector('.cube-face.back .stat-value').textContent = newValue;
                         
-                        // Remove animation class after it completes
+                        // Remove animation classes after they complete
                         setTimeout(() => {{
                             cubeElement.classList.remove('color-change');
+                            cubeElement.classList.remove('rotate360');
                             
                             // Reset to default color after animation
                             setTimeout(() => {{
@@ -642,7 +658,7 @@ class PoolStatsPage(resource.Resource):
                                 }});
                             }}, 1000);
                         }}, 1500);
-                    }}, 100);
+                    }}, 500);
                 }} else {{
                     // For other cubes, use random rotation
                     // Generate random rotation values
