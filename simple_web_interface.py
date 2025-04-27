@@ -535,58 +535,90 @@ class PoolStatsPage(resource.Resource):
                     updateCubeIfChanged('time-since-share-cube', doc);
                     updateCubeIfChanged('valid-shares-cube', doc);
                     
-                    // Get new command history data
-                    const newHistoryRows = Array.from(doc.querySelectorAll('#command-history-tbody tr'));
-                    const currentHistoryRows = Array.from(document.querySelectorAll('#command-history-tbody tr'));
-                    
-                    // Limit to 10 rows maximum
-                    const limitedNewRows = newHistoryRows.slice(0, 10);
-                    
-                    // Check if there are new commands by comparing first row's content
-                    let hasNewCommands = false;
-                    
-                    if (newHistoryRows.length > 0 && currentHistoryRows.length > 0) {{
-                        // Compare the first row's text content
-                        hasNewCommands = newHistoryRows[0].textContent.trim() !== currentHistoryRows[0].textContent.trim();
-                    }} else if (newHistoryRows.length > 0) {{
-                        // We have new rows but no current rows
-                        hasNewCommands = true;
-                    }}
-                    
-                    // If we have new commands, update the display
-                    if (hasNewCommands) {{
-                        // Process one row at a time with delay
-                        const processNextRow = (index) => {{
-                            if (index >= Math.min(10, limitedNewRows.length)) return;
-                            
-                            // Clone the row from the new data
-                            const newRow = limitedNewRows[index].cloneNode(true);
-                            newRow.classList.add('new-row');
-                            
-                            // Insert at the top
-                            const tbody = document.querySelector('#command-history-tbody');
-                            tbody.insertBefore(newRow, tbody.firstChild);
-                            
-                            // If we have more than 10 rows, animate the last one out
-                            if (tbody.children.length > 10) {{
-                                const lastRow = tbody.children[tbody.children.length - 1];
-                                lastRow.classList.add('row-exit');
+                    // Function to update command history
+                    function updateCommandHistory() {{
+                        // Fetch the updated HTML
+                        fetch('/command_history')
+                            .then(response => response.text())
+                            .then(html => {{
+                                // Parse the HTML
+                                const parser = new DOMParser();
+                                const doc = parser.parseFromString(html, 'text/html');
                                 
-                                // Remove after animation completes
-                                setTimeout(() => {{
-                                    if (lastRow.parentNode) {{
-                                        lastRow.parentNode.removeChild(lastRow);
+                                // Get new command history data
+                                const newHistoryRows = Array.from(doc.querySelectorAll('#command-history-tbody tr'));
+                                const currentHistoryRows = Array.from(document.querySelectorAll('#command-history-tbody tr'));
+                                
+                                // Create a map to track unique commands by their content
+                                const uniqueCommands = new Map();
+                                
+                                // Process new rows to get unique commands (limit to 10)
+                                for (const row of newHistoryRows) {{
+                                    // Create a key from timestamp, sender, method, and params to identify unique commands
+                                    const timestamp = row.cells[0].textContent.trim();
+                                    const sender = row.cells[1].textContent.trim();
+                                    const method = row.cells[2].textContent.trim();
+                                    const params = row.cells[3].textContent.trim();
+                                    const key = `${timestamp}-${sender}-${method}-${params}`;
+                                    
+                                    // Only add if we don't already have this command
+                                    if (!uniqueCommands.has(key)) {{
+                                        uniqueCommands.set(key, row);
+                                        
+                                        // Limit to 10 unique commands
+                                        if (uniqueCommands.size >= 10) {{
+                                            break;
+                                        }}
                                     }}
-                                }}, 500);
-                            }}
-                            
-                            // Process the next row after delay
-                            setTimeout(() => processNextRow(index + 1), 250);
-                        }};
-                        
-                        // Start processing rows
-                        processNextRow(0);
+                                }}
+                                
+                                // Get the unique rows in the correct order
+                                const limitedNewRows = Array.from(uniqueCommands.values());
+                                
+                                // Check if there are new commands by comparing first row's content
+                                let hasNewCommands = false;
+                                
+                                if (currentHistoryRows.length === 0 || limitedNewRows.length === 0) {{
+                                    hasNewCommands = true;
+                                }} else {{
+                                    const currentFirstRow = currentHistoryRows[0];
+                                    const newFirstRow = limitedNewRows[0];
+                                    
+                                    hasNewCommands = currentFirstRow.textContent.trim() !== newFirstRow.textContent.trim();
+                                }}
+                                
+                                // If there are new commands, update the table
+                                if (hasNewCommands) {{
+                                    // Get the table body
+                                    const tbody = document.getElementById('command-history-tbody');
+                                    
+                                    // Clear the current content
+                                    tbody.innerHTML = '';
+                                    
+                                    // Process one row at a time with delay
+                                    const processNextRow = (index) => {{
+                                        if (index >= limitedNewRows.length) return;
+                                        
+                                        // Clone the row from the new data
+                                        const newRow = limitedNewRows[index].cloneNode(true);
+                                        newRow.classList.add('new-row');
+                                        
+                                        // Insert at the top
+                                        tbody.appendChild(newRow);
+                                        
+                                        // Process the next row after delay
+                                        setTimeout(() => processNextRow(index + 1), 250);
+                                    }};
+                                    
+                                    // Start processing rows
+                                    processNextRow(0);
+                                }}
+                            }})
+                            .catch(error => console.error('Error updating command history:', error));
                     }}
+                    
+                    // Call the function to update command history
+                    updateCommandHistory();
                 }});
         }}, 5000);
         
