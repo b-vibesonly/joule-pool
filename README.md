@@ -22,8 +22,8 @@ A simple Python-based Bitcoin solo mining pool that connects to a local Bitcoin 
 
 1. Clone this repository:
    ```
-   git clone https://github.com/yourusername/bitcoin-solo-pool.git
-   cd bitcoin-solo-pool
+   git clone https://github.com/b-vibesonly/joule-pool.git
+   cd joule-pool
    ```
 
 2. Create a virtual environment (recommended):
