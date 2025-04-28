@@ -650,30 +650,22 @@ class PoolStatsPage(resource.Resource):
                 frontValue.style.color = color;
                 backValue.style.color = color;
                 
-                // Special handling for block number cube - no rotation effects
-                if (cubeId === 'block-number-cube') {{
-                    // Update value
+                // Apply rotation effect for block number cube
+                const rotateX = Math.random() * 360;
+                const rotateY = Math.random() * 360;
+                const rotateZ = Math.random() * 360;
+                
+                // Apply the rotation
+                cubeElement.style.transform = 'rotateX(' + rotateX + 'deg) rotateY(' + rotateY + 'deg) rotateZ(' + rotateZ + 'deg)';
+                
+                // Reset the rotation after animation
+                setTimeout(() => {{
+                    cubeElement.style.transform = 'rotateX(20deg) rotateY(20deg)';
+                    
+                    // Update the value after rotation
                     frontValue.textContent = newValue;
                     backValue.textContent = newValue;
-                }} else {{
-                    // For other cubes, use rotation effects
-                    // Generate random rotation values
-                    const rotateX = Math.random() * 360;
-                    const rotateY = Math.random() * 360;
-                    const rotateZ = Math.random() * 360;
-                    
-                    // Apply the rotation
-                    cubeElement.style.transform = 'rotateX(' + rotateX + 'deg) rotateY(' + rotateY + 'deg) rotateZ(' + rotateZ + 'deg)';
-                    
-                    // Reset the rotation after animation
-                    setTimeout(() => {{
-                        cubeElement.style.transform = 'rotateX(20deg) rotateY(20deg)';
-                        
-                        // Update the value after rotation
-                        frontValue.textContent = newValue;
-                        backValue.textContent = newValue;
-                    }}, 800);
-                }}
+                }}, 800);
             }}
         }}
         
