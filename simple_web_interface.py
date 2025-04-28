@@ -345,6 +345,12 @@ class PoolStatsPage(resource.Resource):
             color: #0066cc;
             text-align: center;
         }}
+        .bitcoin-logo {{
+            color: #0066cc;
+            font-size: 24px;
+            font-weight: bold;
+            margin-left: 10px;
+        }}
         .stats-container {{
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -535,7 +541,7 @@ class PoolStatsPage(resource.Resource):
 </head>
 <body>
     <div class="card">
-        <h2>Miner Agent: {miner_agent}</h2>
+        <h2>Miner Agent: {miner_agent} <span class="bitcoin-logo">₿</span></h2>
     </div>
     
     <div class="card">
