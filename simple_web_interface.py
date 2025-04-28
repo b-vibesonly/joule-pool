@@ -633,6 +633,23 @@ class PoolStatsPage(resource.Resource):
                     // Update value immediately
                     cube.querySelector('.cube-face.front .stat-value').textContent = newValue;
                     cube.querySelector('.cube-face.back .stat-value').textContent = newValue;
+                    
+                    // Change color based on even/odd number
+                    const blockNumber = parseInt(newValue);
+                    const isEven = blockNumber % 2 === 0;
+                    const color = isEven ? '#0066cc' : '#FF8000'; // Blue for even, Orange for odd
+                    
+                    // Apply color to the value text
+                    const frontValue = cube.querySelector('.cube-face.front .stat-value');
+                    const backValue = cube.querySelector('.cube-face.back .stat-value');
+                    frontValue.style.color = color;
+                    backValue.style.color = color;
+                    
+                    // Apply color to the cube borders
+                    const faces = cube.querySelectorAll('.cube-face');
+                    faces.forEach(face => {{
+                        face.style.borderColor = color;
+                    }});
                 }} else {{
                     // For other cubes, use random rotation
                     // Generate random rotation values
