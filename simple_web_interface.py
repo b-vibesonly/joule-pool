@@ -346,7 +346,7 @@ class PoolStatsPage(resource.Resource):
             text-align: center;
         }}
         .bitcoin-logo {{
-            color: #0066cc;
+            color: #FF8000;
             font-size: 24px;
             font-weight: bold;
             margin-left: 10px;
