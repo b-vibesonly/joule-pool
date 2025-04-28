@@ -310,14 +310,14 @@ class PoolStatsPage(resource.Resource):
     <title>Mining Dashboard</title>
     <style>
         body {{
-            background-color: #121212;
+            background-color: #000000;
             color: #eee;
             font-family: 'Courier New', monospace;
             margin: 0;
             padding: 20px;
         }}
         .card {{
-            background-color: #1e1e1e;
+            background-color: #000000;
             border-radius: 8px;
             padding: 20px;
             margin-bottom: 20px;
@@ -355,7 +355,7 @@ class PoolStatsPage(resource.Resource):
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            background-color: rgba(12, 12, 12, 0.9);
+            background-color: rgba(0, 0, 0, 0.9);
             border: 2px solid var(--cube-color);
             backface-visibility: visible;
             box-sizing: border-box;
@@ -363,26 +363,22 @@ class PoolStatsPage(resource.Resource):
         }}
         /* Create all six faces of the cube */
         .cube-face.front {{
-            transform: translateZ(100px);
+            transform: translateZ(50px);
         }}
         .cube-face.back {{
-            transform: rotateY(180deg) translateZ(100px);
+            transform: rotateY(180deg) translateZ(50px);
         }}
         .cube-face.right {{
-            transform: rotateY(90deg) translateZ(100px);
-            opacity: 0.3;
+            transform: rotateY(90deg) translateZ(50px);
         }}
         .cube-face.left {{
-            transform: rotateY(-90deg) translateZ(100px);
-            opacity: 0.3;
+            transform: rotateY(-90deg) translateZ(50px);
         }}
         .cube-face.top {{
-            transform: rotateX(90deg) translateZ(100px);
-            opacity: 0.3;
+            transform: rotateX(90deg) translateZ(50px);
         }}
         .cube-face.bottom {{
-            transform: rotateX(-90deg) translateZ(100px);
-            opacity: 0.3;
+            transform: rotateX(-90deg) translateZ(50px);
         }}
         /* Add cube edges */
         .cube::after {{
@@ -520,7 +516,6 @@ class PoolStatsPage(resource.Resource):
     </style>
 </head>
 <body>
-    <h1>Mining Pool Dashboard</h1>
     <div class="card">
         <h2>Miner Agent: {miner_agent}</h2>
     </div>
