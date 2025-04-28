@@ -4,6 +4,8 @@
 import os
 import json
 import time
+import re
+import logging
 from twisted.web import server, resource
 from twisted.internet import reactor
 from datetime import datetime
@@ -61,6 +63,87 @@ class PoolStatsPage(resource.Resource):
     def __init__(self, factory):
         resource.Resource.__init__(self)
         self.factory = factory
+        self.last_difficulty = 1.0
+        self.difficulty_history = []  # Store recent difficulty values
+        
+    def get_latest_difficulty_from_logs(self):
+        """Extract the latest mining difficulty from log messages"""
+        try:
+            # Define the log file path - adjust as needed
+            log_files = [
+                "mining_pool.log",  # Default log file
+                "/var/log/mining_pool.log",  # System log location
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "mining_pool.log"),  # Same directory as script
+                os.path.join(os.path.expanduser("~"), "mining_pool.log"),  # User's home directory
+                "/tmp/mining_pool.log",  # Temporary directory
+                "solo_pool.log",  # Alternative name
+                os.path.join(os.path.dirname(os.path.abspath(__file__)), "solo_pool.log"),
+                "logs/mining_pool.log",
+                "logs/solo_pool.log",
+                "../logs/mining_pool.log",
+            ]
+            
+            # Try to find an existing log file
+            log_file = None
+            for file_path in log_files:
+                if os.path.exists(file_path):
+                    log_file = file_path
+                    break
+            
+            if log_file is None:
+                # If no log file found, check if we can access stdout/stderr
+                return None
+                
+            # Patterns to match difficulty in log messages
+            patterns = [
+                r"Sent new difficulty ([0-9.]+) to",
+                r"Halving difficulty from [0-9.]+ to ([0-9.]+)",
+                r"difficulty from [0-9.]+ to ([0-9.]+)",
+                r"new difficulty ([0-9.]+) to",
+                r"difficulty: ([0-9.]+)"
+            ]
+            
+            # Read the last 50 lines of the log file
+            with open(log_file, 'r') as f:
+                # Get file size
+                f.seek(0, 2)
+                file_size = f.tell()
+                
+                # Start from the end and read up to 20KB
+                f.seek(max(0, file_size - 20000), 0)
+                lines = f.readlines()
+                
+                # Take the last 100 lines
+                lines = lines[-100:]
+            
+            # Search for difficulty values in reverse order (newest first)
+            for line in reversed(lines):
+                for pattern in patterns:
+                    match = re.search(pattern, line)
+                    if match:
+                        difficulty = float(match.group(1))
+                        # Add to history
+                        self.difficulty_history.append(difficulty)
+                        if len(self.difficulty_history) > 5:
+                            self.difficulty_history = self.difficulty_history[-5:]
+                        return difficulty
+                    
+            return None
+        except Exception as e:
+            logging.error(f"Error extracting difficulty from logs: {str(e)}")
+            return None
+    
+    def get_difficulty_from_stdout(self):
+        """Try to capture difficulty values from stdout/stderr"""
+        try:
+            # This is a fallback method to get difficulty values
+            # Check if we have any values in history
+            if self.difficulty_history:
+                return self.difficulty_history[-1]
+            return None
+        except Exception as e:
+            logging.error(f"Error getting difficulty from stdout: {str(e)}")
+            return None
     
     def render_GET(self, request):
         """Render the stats page"""
@@ -101,6 +184,15 @@ class PoolStatsPage(resource.Resource):
                 full_reward_address = full_address
             reward_address = full_address[-4:] if len(full_address) >= 4 else full_address
         
+        # Get command history
+        command_history = self.factory.stats.get_stratum_command_history()
+        
+        # Sort by timestamp in descending order (newest first)
+        command_history.sort(key=lambda x: x['timestamp'], reverse=True)
+        
+        # Limit to 10 most recent commands
+        command_history = command_history[:10]
+        
         # Format worker stats as HTML table rows
         worker_rows = ""
         for worker, stats in worker_stats.items():
@@ -133,7 +225,8 @@ class PoolStatsPage(resource.Resource):
         
         # Format stratum command history
         command_history_rows = ""
-        for cmd in pool_stats.get('stratum_command_history', [])[:5]:
+        # Reverse the command history to show newest first and take 10 commands
+        for cmd in command_history:
             timestamp = datetime.fromtimestamp(cmd.get('timestamp', 0)).strftime('%H:%M:%S')
             sender = cmd.get('sender', 'unknown')
             method = cmd.get('method', 'unknown')
@@ -171,6 +264,43 @@ class PoolStatsPage(resource.Resource):
             </tr>
             """
         
+        # Get the mining difficulty directly from the difficulty adjuster
+        try:
+            # Get the difficulty directly from the adjuster
+            mining_difficulty = 0
+            
+            # Try to get the difficulty from the clients dictionary in the adjuster
+            if hasattr(self.factory, 'difficulty_adjuster') and hasattr(self.factory.difficulty_adjuster, 'client_difficulties'):
+                # Get the first client's difficulty
+                if self.factory.difficulty_adjuster.client_difficulties:
+                    # Get any client ID
+                    client_id = next(iter(self.factory.difficulty_adjuster.client_difficulties))
+                    mining_difficulty = self.factory.difficulty_adjuster.client_difficulties[client_id]
+            
+            # If that failed, try to get it from the worker stats
+            if mining_difficulty == 0:
+                for worker, stats in worker_stats.items():
+                    if stats.get('active', False):
+                        mining_difficulty = stats.get('difficulty', 1.0)
+                        break
+            
+            # If still no value, use the initial difficulty
+            if mining_difficulty == 0:
+                mining_difficulty = self.factory.difficulty_adjuster.initial_difficulty
+        except Exception as e:
+            logging.error(f"Error getting mining difficulty: {str(e)}")
+            mining_difficulty = self.last_difficulty  # Use the last known value
+        
+        # Store this difficulty for future use
+        self.last_difficulty = mining_difficulty
+        
+        # Get miner agent if available
+        miner_agent = "Unknown"
+        for worker, stats in worker_stats.items():
+            if stats.get('active', False) and 'agent' in stats:
+                miner_agent = stats.get('agent', 'Unknown')
+                break
+        
         # Create HTML directly
         html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -180,87 +310,42 @@ class PoolStatsPage(resource.Resource):
     <title>Mining Dashboard</title>
     <style>
         body {{
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            color: #f0f0f0;
-            max-width: 1200px;
-            margin: 0 auto;
+            background-color: #121212;
+            color: #eee;
+            font-family: 'Courier New', monospace;
+            margin: 0;
             padding: 20px;
-            background-color: #0c0c0c;
-        }}
-        h1, h2, h3 {{
-            color: #0066cc;
         }}
         .card {{
-            background: #0c0c0c;
+            background-color: #1e1e1e;
             border-radius: 8px;
             padding: 20px;
             margin-bottom: 20px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
         }}
-        table {{
-            width: 100%;
-            border-collapse: collapse;
-        }}
-        th, td {{
-            padding: 12px;
-            text-align: left;
-            border-bottom: 1px solid #333;
-        }}
-        th {{
-            background-color: #252525;
+        h1, h2 {{
             color: #0066cc;
-        }}
-        tr:hover {{
-            background-color: #252525;
-        }}
-        .header {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }}
-        .auto-refresh {{
-            display: flex;
-            align-items: center;
-            color: #f0f0f0;
-        }}
-        .auto-refresh label {{
-            margin-right: 10px;
-        }}
-        .auto-refresh select {{
-            background-color: #333;
-            color: #f0f0f0;
-            border: 1px solid #444;
-            padding: 5px;
-        }}
-        .footer {{
             text-align: center;
-            margin-top: 30px;
-            color: #888;
-            font-size: 14px;
-            display: none;
         }}
         .stats-container {{
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: space-around;
-            gap: 40px;
-            margin-bottom: 30px;
-            margin-top: 60px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
         }}
         .stat-cube {{
-            width: 200px;
             height: 200px;
-            position: relative;
-            perspective: 1200px;
+            perspective: 1000px;
         }}
         .cube {{
             width: 100%;
             height: 100%;
             position: relative;
             transform-style: preserve-3d;
-            transition: transform 0.8s;
             transform: rotateX(15deg) rotateY(15deg);
+            transition: transform 0.8s ease-out;
+            --cube-color: #0066cc;
         }}
         .cube-face {{
             position: absolute;
@@ -270,9 +355,11 @@ class PoolStatsPage(resource.Resource):
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            background-color: rgba(40, 40, 40, 0.9);
-            border: 2px solid #0066cc;
-            backface-visibility: hidden;
+            background-color: rgba(12, 12, 12, 0.9);
+            border: 2px solid var(--cube-color);
+            backface-visibility: visible;
+            box-sizing: border-box;
+            padding: 20px;
         }}
         /* Create all six faces of the cube */
         .cube-face.front {{
@@ -339,9 +426,12 @@ class PoolStatsPage(resource.Resource):
             margin-bottom: 15px;
         }}
         .stat-label {{
-            font-size: 16px;
-            color: #ccc;
-            font-weight: 500;
+            font-size: 0.9rem;
+            color: #aaa;
+            text-align: center;
+            margin-top: 10px;
+            white-space: nowrap;
+            width: 100%;
         }}
         .reward-address-title {{
             font-size: 20px;
@@ -430,9 +520,9 @@ class PoolStatsPage(resource.Resource):
     </style>
 </head>
 <body>
-    <div class="header">
-        <div></div>
-        <div></div>
+    <h1>Mining Pool Dashboard</h1>
+    <div class="card">
+        <h2>Miner Agent: {miner_agent}</h2>
     </div>
     
     <div class="card">
@@ -457,16 +547,12 @@ class PoolStatsPage(resource.Resource):
             <div class="stat-cube" id="time-since-share-cube">
                 <div class="cube">
                     <div class="cube-face front">
-                        <div class="stat-value" id="time-since-share-value">
-                            {time_since_last_share if 'time_since_last_share' in locals() else 'N/A'}
-                        </div>
-                        <div class="stat-label">Time Since Last Share</div>
+                        <div class="stat-value">{time_since_last_share if 'time_since_last_share' in locals() else 'N/A'}</div>
+                        <div class="stat-label">Time Since Share</div>
                     </div>
                     <div class="cube-face back">
-                        <div class="stat-value" id="time-since-share-value-back">
-                            {time_since_last_share if 'time_since_last_share' in locals() else 'N/A'}
-                        </div>
-                        <div class="stat-label">Time Since Last Share</div>
+                        <div class="stat-value">{time_since_last_share if 'time_since_last_share' in locals() else 'N/A'}</div>
+                        <div class="stat-label">Time Since Share</div>
                     </div>
                     <div class="cube-face right"></div>
                     <div class="cube-face left"></div>
@@ -478,16 +564,29 @@ class PoolStatsPage(resource.Resource):
             <div class="stat-cube" id="valid-shares-cube">
                 <div class="cube">
                     <div class="cube-face front">
-                        <div class="stat-value">
-                            {stats.get('shares', {}).get('valid', 0) if 'stats' in locals() else pool_stats.get('valid_shares', 0)}
-                        </div>
+                        <div class="stat-value">{stats.get('shares', {}).get('valid', 0) if 'stats' in locals() else pool_stats.get('valid_shares', 0)}</div>
                         <div class="stat-label">Valid Shares</div>
                     </div>
                     <div class="cube-face back">
-                        <div class="stat-value">
-                            {stats.get('shares', {}).get('valid', 0) if 'stats' in locals() else pool_stats.get('valid_shares', 0)}
-                        </div>
+                        <div class="stat-value">{stats.get('shares', {}).get('valid', 0) if 'stats' in locals() else pool_stats.get('valid_shares', 0)}</div>
                         <div class="stat-label">Valid Shares</div>
+                    </div>
+                    <div class="cube-face right"></div>
+                    <div class="cube-face left"></div>
+                    <div class="cube-face top"></div>
+                    <div class="cube-face bottom"></div>
+                </div>
+            </div>
+            
+            <div class="stat-cube" id="mining-difficulty-cube">
+                <div class="cube">
+                    <div class="cube-face front">
+                        <div class="stat-value">{mining_difficulty}</div>
+                        <div class="stat-label">Mining Difficulty</div>
+                    </div>
+                    <div class="cube-face back">
+                        <div class="stat-value">{mining_difficulty}</div>
+                        <div class="stat-label">Mining Difficulty</div>
                     </div>
                     <div class="cube-face right"></div>
                     <div class="cube-face left"></div>
@@ -500,21 +599,6 @@ class PoolStatsPage(resource.Resource):
     
     <div class="card">
         <h2 class="reward-address-title">Reward Address: {full_reward_address}</h2>
-        <div class="terminal-history">
-            <table class="stratum-history-table">
-                <thead>
-                    <tr>
-                        <th>Time</th>
-                        <th>Sender</th>
-                        <th>Method</th>
-                        <th>Parameters</th>
-                    </tr>
-                </thead>
-                <tbody id="command-history-tbody">
-                    {command_history_rows}
-                </tbody>
-            </table>
-        </div>
     </div>
     
     <div class="footer">
@@ -522,157 +606,112 @@ class PoolStatsPage(resource.Resource):
     </div>
     
     <script>
-        // Set fixed refresh interval of 5 seconds
-        let refreshInterval = setInterval(() => {{
+        // Function to update cube values and apply appropriate color
+        function updateCubeValue(cubeId, newValue) {{
+            const cube = document.getElementById(cubeId);
+            if (!cube) return;
+            
+            // Get the current value
+            const cubeValue = cube.querySelector('.cube-face.front .stat-value').textContent.trim();
+            
+            // Check if the value has changed
+            if (cubeValue !== newValue) {{
+                // Always use blue color
+                const color = '#0066cc';
+                
+                // Get all cube elements
+                const cubeElement = cube.querySelector('.cube');
+                const allFaces = cube.querySelectorAll('.cube-face');
+                
+                // Apply color to all faces and borders
+                allFaces.forEach(face => {{
+                    face.style.borderColor = color;
+                }});
+                
+                // Apply color to the cube itself
+                cubeElement.style.setProperty('--cube-color', color);
+                
+                // Apply color to the value text
+                const frontValue = cube.querySelector('.cube-face.front .stat-value');
+                const backValue = cube.querySelector('.cube-face.back .stat-value');
+                frontValue.style.color = color;
+                backValue.style.color = color;
+                
+                // Special handling for block number cube - no rotation effects
+                if (cubeId === 'block-number-cube') {{
+                    // Update value
+                    frontValue.textContent = newValue;
+                    backValue.textContent = newValue;
+                }} else {{
+                    // For other cubes, use rotation effects
+                    // Generate random rotation values
+                    const rotateX = Math.random() * 360;
+                    const rotateY = Math.random() * 360;
+                    const rotateZ = Math.random() * 360;
+                    
+                    // Apply the rotation
+                    cubeElement.style.transform = 'rotateX(' + rotateX + 'deg) rotateY(' + rotateY + 'deg) rotateZ(' + rotateZ + 'deg)';
+                    
+                    // Reset the rotation after animation
+                    setTimeout(() => {{
+                        cubeElement.style.transform = 'rotateX(15deg) rotateY(15deg)';
+                        
+                        // Update the value after rotation
+                        frontValue.textContent = newValue;
+                        backValue.textContent = newValue;
+                    }}, 800);
+                }}
+            }}
+        }}
+        
+        // Auto-refresh every 5 seconds
+        setInterval(function() {{
             fetch(window.location.href)
                 .then(response => response.text())
                 .then(html => {{
+                    // Parse the HTML
                     const parser = new DOMParser();
                     const doc = parser.parseFromString(html, 'text/html');
                     
                     // Update each stat cube if value has changed
-                    updateCubeIfChanged('block-number-cube', doc);
-                    updateCubeIfChanged('time-since-share-cube', doc);
-                    updateCubeIfChanged('valid-shares-cube', doc);
-                    
-                    // Function to update command history
-                    function updateCommandHistory() {{
-                        // Fetch the updated HTML
-                        fetch('/command_history')
-                            .then(response => response.text())
-                            .then(html => {{
-                                // Parse the HTML
-                                const parser = new DOMParser();
-                                const doc = parser.parseFromString(html, 'text/html');
-                                
-                                // Get new command history data
-                                const newHistoryRows = Array.from(doc.querySelectorAll('#command-history-tbody tr'));
-                                const currentHistoryRows = Array.from(document.querySelectorAll('#command-history-tbody tr'));
-                                
-                                // Create a map to track unique commands by their content
-                                const uniqueCommands = new Map();
-                                
-                                // Process new rows to get unique commands (limit to 10)
-                                for (const row of newHistoryRows) {{
-                                    // Create a key from timestamp, sender, method, and params to identify unique commands
-                                    const timestamp = row.cells[0].textContent.trim();
-                                    const sender = row.cells[1].textContent.trim();
-                                    const method = row.cells[2].textContent.trim();
-                                    const params = row.cells[3].textContent.trim();
-                                    const key = timestamp + '-' + sender + '-' + method + '-' + params;
-                                    
-                                    // Only add if we don't already have this command
-                                    if (!uniqueCommands.has(key)) {{
-                                        uniqueCommands.set(key, row);
-                                        
-                                        // Limit to 10 unique commands
-                                        if (uniqueCommands.size >= 10) {{
-                                            break;
-                                        }}
-                                    }}
-                                }}
-                                
-                                // Get the unique rows in the correct order
-                                const limitedNewRows = Array.from(uniqueCommands.values());
-                                
-                                // Check if there are new commands by comparing first row's content
-                                let hasNewCommands = false;
-                                
-                                if (currentHistoryRows.length === 0 || limitedNewRows.length === 0) {{
-                                    hasNewCommands = true;
-                                }} else {{
-                                    const currentFirstRow = currentHistoryRows[0];
-                                    const newFirstRow = limitedNewRows[0];
-                                    
-                                    hasNewCommands = currentFirstRow.textContent.trim() !== newFirstRow.textContent.trim();
-                                }}
-                                
-                                // If there are new commands, update the table
-                                if (hasNewCommands) {{
-                                    // Get the table body
-                                    const tbody = document.getElementById('command-history-tbody');
-                                    
-                                    // Clear the current content
-                                    tbody.innerHTML = '';
-                                    
-                                    // Process one row at a time with delay
-                                    const processNextRow = (index) => {{
-                                        if (index >= limitedNewRows.length) return;
-                                        
-                                        // Clone the row from the new data
-                                        const newRow = limitedNewRows[index].cloneNode(true);
-                                        newRow.classList.add('new-row');
-                                        
-                                        // Insert at the top
-                                        tbody.appendChild(newRow);
-                                        
-                                        // Process the next row after delay
-                                        setTimeout(() => processNextRow(index + 1), 250);
-                                    }};
-                                    
-                                    // Start processing rows
-                                    processNextRow(0);
-                                }}
-                            }})
-                            .catch(error => console.error('Error updating command history:', error));
-                    }}
-                    
-                    // Call the function to update command history
-                    updateCommandHistory();
+                    updateCubeValue('block-number-cube', doc.getElementById('block-number-cube').querySelector('.cube-face.front .stat-value').textContent.trim());
+                    updateCubeValue('time-since-share-cube', doc.getElementById('time-since-share-cube').querySelector('.cube-face.front .stat-value').textContent.trim());
+                    updateCubeValue('valid-shares-cube', doc.getElementById('valid-shares-cube').querySelector('.cube-face.front .stat-value').textContent.trim());
+                    updateCubeValue('mining-difficulty-cube', doc.getElementById('mining-difficulty-cube').querySelector('.cube-face.front .stat-value').textContent.trim());
                 }});
         }}, 5000);
         
-        function updateCubeIfChanged(cubeId, newDoc) {{
-            const cube = document.getElementById(cubeId);
-            const cubeValue = cube.querySelector('.stat-value').textContent.trim();
-            const newValue = newDoc.getElementById(cubeId).querySelector('.stat-value').textContent.trim();
+        // Initialize all cubes with the correct color based on even/odd value
+        document.addEventListener('DOMContentLoaded', function() {{
+            // Get all stat cubes
+            const statCubes = document.querySelectorAll('.stat-cube');
             
-            if (cubeValue !== newValue) {{
-                // Special handling for block number cube - no effects, just update value
-                if (cubeId === 'block-number-cube') {{
-                    // Update value immediately
-                    cube.querySelector('.cube-face.front .stat-value').textContent = newValue;
-                    cube.querySelector('.cube-face.back .stat-value').textContent = newValue;
+            statCubes.forEach(cube => {{
+                const valueElement = cube.querySelector('.cube-face.front .stat-value');
+                if (valueElement) {{
+                    // Always use blue color
+                    const color = '#0066cc';
                     
-                    // Change color based on even/odd number
-                    const blockNumber = parseInt(newValue);
-                    const isEven = blockNumber % 2 === 0;
-                    const color = isEven ? '#0066cc' : '#FF8000'; // Blue for even, Orange for odd
+                    // Get all cube elements
+                    const cubeElement = cube.querySelector('.cube');
+                    if (cubeElement) {{
+                        cubeElement.style.setProperty('--cube-color', color);
+                    }}
+                    
+                    // Apply color to all faces
+                    const allFaces = cube.querySelectorAll('.cube-face');
+                    allFaces.forEach(face => {{
+                        face.style.borderColor = color;
+                    }});
                     
                     // Apply color to the value text
                     const frontValue = cube.querySelector('.cube-face.front .stat-value');
                     const backValue = cube.querySelector('.cube-face.back .stat-value');
-                    frontValue.style.color = color;
-                    backValue.style.color = color;
-                    
-                    // Apply color to the cube borders
-                    const faces = cube.querySelectorAll('.cube-face');
-                    faces.forEach(face => {{
-                        face.style.borderColor = color;
-                    }});
-                }} else {{
-                    // For other cubes, use random rotation
-                    // Generate random rotation values
-                    const randomX = Math.floor(Math.random() * 360) - 180;
-                    const randomY = Math.floor(Math.random() * 360) - 180;
-                    const randomZ = Math.floor(Math.random() * 90) - 45;
-                    
-                    // Apply random rotation animation
-                    cube.querySelector('.cube').style.transform = 'rotateX(' + randomX + 'deg) rotateY(' + randomY + 'deg) rotateZ(' + randomZ + 'deg)';
-                    
-                    // Update back face value
-                    setTimeout(() => {{
-                        cube.querySelector('.cube-face.back .stat-value').textContent = newValue;
-                        
-                        // Reset to original position after full rotation
-                        setTimeout(() => {{
-                            cube.querySelector('.cube').style.transform = 'rotateX(15deg) rotateY(15deg)';
-                            cube.querySelector('.cube-face.front .stat-value').textContent = newValue;
-                        }}, 800);
-                    }}, 400);
+                    if (frontValue) frontValue.style.color = color;
+                    if (backValue) backValue.style.color = color;
                 }}
-            }}
-        }}
+            }});
+        }});
     </script>
 </body>
 </html>

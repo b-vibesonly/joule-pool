@@ -347,6 +347,13 @@ class StratumProtocol(Protocol):
         """Send mining.set_difficulty notification"""
         self.difficulty = difficulty
         self.send_notification("mining.set_difficulty", [difficulty])
+        
+        # Update the worker's difficulty in pool stats
+        if self.worker_name and hasattr(self.factory, 'stats'):
+            with self.factory.stats.lock:
+                if self.worker_name in self.factory.stats.clients:
+                    self.factory.stats.clients[self.worker_name]['difficulty'] = difficulty
+                    logger.debug(f"Updated difficulty for {self.worker_name} to {difficulty} in pool stats")
     
     def send_job(self, job_id, prev_hash, coinbase1, coinbase2, merkle_branches, version, bits, time, clean_jobs):
         """Send mining.notify notification"""
@@ -396,7 +403,9 @@ class StratumFactory(Factory):
             initial_difficulty=initial_difficulty,
             target_share_time=10,  # Target 10 seconds between shares
             min_difficulty=0.01,
-            max_difficulty=1000000
+            max_difficulty=1000000,
+            no_share_timeout=30,  # Lower difficulty if no share in 30 seconds
+            inactive_adjustment_factor=3  # More aggressive adjustment for inactive miners
         )
         
         # Initialize with a block template
@@ -407,6 +416,9 @@ class StratumFactory(Factory):
         
         # Schedule periodic stats logging
         reactor.callLater(60, self.log_stats)
+        
+        # Schedule periodic check for inactive clients
+        reactor.callLater(15, self.check_inactive_clients)
     
     def log_stats(self):
         """Log pool statistics periodically"""
@@ -513,6 +525,32 @@ class StratumFactory(Factory):
             logger.error(f"Error creating mining job: {str(e)}")
             logger.debug(traceback.format_exc())
             return None
+    
+    def check_inactive_clients(self):
+        """Check for inactive clients and adjust their difficulty"""
+        try:
+            # Check for clients that haven't submitted shares in a while
+            adjusted_clients = self.difficulty_adjuster.check_inactive_clients()
+            
+            # Send new difficulty to any adjusted clients
+            for client_id, new_difficulty in adjusted_clients:
+                if client_id in self.clients:
+                    client = self.clients[client_id]
+                    client.send_difficulty(new_difficulty)
+                    logger.info(f"Sent new difficulty {new_difficulty} to inactive client {client_id}")
+                    
+                    # Also update the pool stats directly to ensure the dashboard shows the correct value
+                    if hasattr(self, 'stats'):
+                        for worker_name, worker_stats in self.stats.clients.items():
+                            if 'client_ids' in worker_stats and client_id in worker_stats['client_ids']:
+                                with self.stats.lock:
+                                    self.stats.clients[worker_name]['difficulty'] = new_difficulty
+                                    logger.debug(f"Updated difficulty for worker {worker_name} to {new_difficulty} in pool stats")
+        except Exception as e:
+            logger.error(f"Error checking inactive clients: {str(e)}")
+        finally:
+            # Schedule next check more frequently to ensure we catch inactive miners quickly
+            reactor.callLater(15, self.check_inactive_clients)
     
     def create_coinbase_tx(self, height, coinbase_value):
         """Create a coinbase transaction with extranonce placeholder"""

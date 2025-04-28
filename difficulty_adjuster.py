@@ -16,7 +16,9 @@ class DifficultyAdjuster:
     
     def __init__(self, initial_difficulty=1, target_share_time=10, 
                  min_difficulty=0.01, max_difficulty=1000000,
-                 variance_percent=30, adjustment_factor=2):
+                 variance_percent=30, adjustment_factor=2,
+                 no_share_timeout=30,  
+                 inactive_adjustment_factor=3):  
         """
         Initialize the difficulty adjuster
         
@@ -26,6 +28,8 @@ class DifficultyAdjuster:
         max_difficulty: Maximum allowed difficulty
         variance_percent: Allowed variance in share time before adjusting
         adjustment_factor: How aggressively to adjust difficulty
+        no_share_timeout: Lower difficulty if no share in this many seconds
+        inactive_adjustment_factor: How aggressively to adjust difficulty for inactive miners
         """
         self.initial_difficulty = initial_difficulty
         self.target_share_time = target_share_time
@@ -33,10 +37,13 @@ class DifficultyAdjuster:
         self.max_difficulty = max_difficulty
         self.variance_percent = variance_percent
         self.adjustment_factor = adjustment_factor
+        self.no_share_timeout = no_share_timeout
+        self.inactive_adjustment_factor = inactive_adjustment_factor
         
         # Track share times per client
         self.client_share_times = defaultdict(lambda: deque(maxlen=10))
         self.client_difficulties = {}
+        self.inactive_count = defaultdict(int)  
         self.lock = threading.RLock()
     
     def get_difficulty(self, client_id):
@@ -61,8 +68,13 @@ class DifficultyAdjuster:
                 time_since_last = timestamp - share_times[-1]
                 share_times.append(timestamp)
                 
-                # Check if we need to adjust difficulty
-                return self._check_adjust_difficulty(client_id, time_since_last)
+                # Only consider increasing difficulty if share came in within 5 seconds
+                if time_since_last <= 5:
+                    # Check if we need to adjust difficulty
+                    return self._check_adjust_difficulty(client_id, time_since_last)
+                else:
+                    # If share took longer than 5 seconds, don't adjust difficulty
+                    return False, self.client_difficulties[client_id]
             else:
                 # First share, just record the time
                 share_times.append(timestamp)
@@ -77,8 +89,8 @@ class DifficultyAdjuster:
         lower_bound = self.target_share_time - variance
         upper_bound = self.target_share_time + variance
         
-        # Only adjust if outside variance bounds
-        if time_since_last < lower_bound:
+        # Only increase difficulty if shares are coming very fast AND time since last share is not too high
+        if time_since_last < lower_bound and time_since_last <= 10:
             # Shares coming too fast, increase difficulty
             new_diff = min(
                 current_diff * self.adjustment_factor,
@@ -116,3 +128,44 @@ class DifficultyAdjuster:
             
             # Return whether the difficulty changed and the new difficulty
             return old_diff != capped_diff, capped_diff
+    
+    def check_inactive_clients(self):
+        """
+        Check for clients that haven't submitted shares in a while
+        and lower their difficulty if needed
+        """
+        current_time = time.time()
+        adjusted_clients = []
+        
+        with self.lock:
+            for client_id, share_times in self.client_share_times.items():
+                if not share_times:
+                    continue
+                    
+                last_share_time = share_times[-1]
+                time_since_last = current_time - last_share_time
+                
+                # If no share in the timeout period, halve the difficulty
+                if time_since_last > self.no_share_timeout:
+                    current_diff = self.client_difficulties[client_id]
+                    
+                    # Only lower if above minimum
+                    if current_diff > self.min_difficulty:
+                        # Directly halve the difficulty (more aggressive than before)
+                        new_diff = max(
+                            current_diff / 2,  # Halve the difficulty
+                            self.min_difficulty
+                        )
+                        
+                        logger.info(f"Client {client_id} inactive for {time_since_last:.1f}s. "
+                                   f"Halving difficulty from {current_diff} to {new_diff}")
+                        
+                        self.client_difficulties[client_id] = new_diff
+                        adjusted_clients.append((client_id, new_diff))
+                else:
+                    # Reset inactive count if client has submitted a share within timeout
+                    if client_id in self.inactive_count and self.inactive_count[client_id] > 0:
+                        logger.info(f"Client {client_id} is active again, resetting inactive count")
+                        self.inactive_count[client_id] = 0
+        
+        return adjusted_clients
