@@ -331,19 +331,22 @@ class PoolStatsPage(resource.Resource):
             display: grid;
             grid-template-columns: 1fr 1fr;
             grid-template-rows: 1fr 1fr;
-            gap: 20px;
-            margin-top: 20px;
+            gap: 40px;
+            margin: 40px auto;
+            max-width: 500px;
         }}
         .stat-cube {{
-            height: 200px;
-            perspective: 1000px;
+            height: 150px;
+            width: 150px;
+            margin: 0 auto;
+            perspective: 600px;
         }}
         .cube {{
             width: 100%;
             height: 100%;
             position: relative;
             transform-style: preserve-3d;
-            transform: rotateX(15deg) rotateY(15deg);
+            transform: rotateX(20deg) rotateY(20deg);
             transition: transform 0.8s ease-out;
             --cube-color: #0066cc;
         }}
@@ -359,26 +362,26 @@ class PoolStatsPage(resource.Resource):
             border: 2px solid var(--cube-color);
             backface-visibility: visible;
             box-sizing: border-box;
-            padding: 20px;
+            padding: 10px;
         }}
         /* Create all six faces of the cube */
         .cube-face.front {{
-            transform: translateZ(50px);
+            transform: translateZ(75px);
         }}
         .cube-face.back {{
-            transform: rotateY(180deg) translateZ(50px);
+            transform: rotateY(180deg) translateZ(75px);
         }}
         .cube-face.right {{
-            transform: rotateY(90deg) translateZ(50px);
+            transform: rotateY(90deg) translateZ(75px);
         }}
         .cube-face.left {{
-            transform: rotateY(-90deg) translateZ(50px);
+            transform: rotateY(-90deg) translateZ(75px);
         }}
         .cube-face.top {{
-            transform: rotateX(90deg) translateZ(50px);
+            transform: rotateX(90deg) translateZ(75px);
         }}
         .cube-face.bottom {{
-            transform: rotateX(-90deg) translateZ(50px);
+            transform: rotateX(-90deg) translateZ(75px);
         }}
         /* Add cube edges */
         .cube::after {{
@@ -388,7 +391,7 @@ class PoolStatsPage(resource.Resource):
             height: 100%;
             border: 2px solid rgba(0, 102, 204, 0.5);
             box-sizing: border-box;
-            transform: translateZ(-100px);
+            transform: translateZ(-75px);
         }}
         /* Add color change animation */
         @keyframes colorPulse {{
@@ -415,19 +418,16 @@ class PoolStatsPage(resource.Resource):
         .stat-cube:hover .cube {{
             transform: rotateX(25deg) rotateY(25deg);
         }}
-        .stat-value {{
-            font-size: 32px;
+        .value {{
+            font-size: 24px;
             font-weight: bold;
             color: #0066cc;
-            margin-bottom: 15px;
+            margin-bottom: 5px;
         }}
-        .stat-label {{
-            font-size: 0.9rem;
-            color: #aaa;
-            text-align: center;
-            margin-top: 10px;
-            white-space: nowrap;
-            width: 100%;
+        .label {{
+            font-size: 12px;
+            color: #999;
+            text-transform: uppercase;
         }}
         .reward-address-title {{
             font-size: 20px;
@@ -525,12 +525,12 @@ class PoolStatsPage(resource.Resource):
             <div class="stat-cube" id="block-number-cube">
                 <div class="cube">
                     <div class="cube-face front">
-                        <div class="stat-value">{block_number}</div>
-                        <div class="stat-label">Block Number</div>
+                        <div class="value">{block_number}</div>
+                        <div class="label">Block Number</div>
                     </div>
                     <div class="cube-face back">
-                        <div class="stat-value">{block_number}</div>
-                        <div class="stat-label">Block Number</div>
+                        <div class="value">{block_number}</div>
+                        <div class="label">Block Number</div>
                     </div>
                     <div class="cube-face right"></div>
                     <div class="cube-face left"></div>
@@ -542,12 +542,12 @@ class PoolStatsPage(resource.Resource):
             <div class="stat-cube" id="time-since-share-cube">
                 <div class="cube">
                     <div class="cube-face front">
-                        <div class="stat-value">{time_since_last_share if 'time_since_last_share' in locals() else 'N/A'}</div>
-                        <div class="stat-label">Time Since Share</div>
+                        <div class="value">{time_since_last_share if 'time_since_last_share' in locals() else 'N/A'}</div>
+                        <div class="label">Time Since Share</div>
                     </div>
                     <div class="cube-face back">
-                        <div class="stat-value">{time_since_last_share if 'time_since_last_share' in locals() else 'N/A'}</div>
-                        <div class="stat-label">Time Since Share</div>
+                        <div class="value">{time_since_last_share if 'time_since_last_share' in locals() else 'N/A'}</div>
+                        <div class="label">Time Since Share</div>
                     </div>
                     <div class="cube-face right"></div>
                     <div class="cube-face left"></div>
@@ -559,12 +559,12 @@ class PoolStatsPage(resource.Resource):
             <div class="stat-cube" id="valid-shares-cube">
                 <div class="cube">
                     <div class="cube-face front">
-                        <div class="stat-value">{stats.get('shares', {}).get('valid', 0) if 'stats' in locals() else pool_stats.get('valid_shares', 0)}</div>
-                        <div class="stat-label">Valid Shares</div>
+                        <div class="value">{stats.get('shares', {}).get('valid', 0) if 'stats' in locals() else pool_stats.get('valid_shares', 0)}</div>
+                        <div class="label">Valid Shares</div>
                     </div>
                     <div class="cube-face back">
-                        <div class="stat-value">{stats.get('shares', {}).get('valid', 0) if 'stats' in locals() else pool_stats.get('valid_shares', 0)}</div>
-                        <div class="stat-label">Valid Shares</div>
+                        <div class="value">{stats.get('shares', {}).get('valid', 0) if 'stats' in locals() else pool_stats.get('valid_shares', 0)}</div>
+                        <div class="label">Valid Shares</div>
                     </div>
                     <div class="cube-face right"></div>
                     <div class="cube-face left"></div>
@@ -576,12 +576,12 @@ class PoolStatsPage(resource.Resource):
             <div class="stat-cube" id="mining-difficulty-cube">
                 <div class="cube">
                     <div class="cube-face front">
-                        <div class="stat-value">{mining_difficulty}</div>
-                        <div class="stat-label">Mining Difficulty</div>
+                        <div class="value">{mining_difficulty}</div>
+                        <div class="label">Mining Difficulty</div>
                     </div>
                     <div class="cube-face back">
-                        <div class="stat-value">{mining_difficulty}</div>
-                        <div class="stat-label">Mining Difficulty</div>
+                        <div class="value">{mining_difficulty}</div>
+                        <div class="label">Mining Difficulty</div>
                     </div>
                     <div class="cube-face right"></div>
                     <div class="cube-face left"></div>
@@ -607,7 +607,7 @@ class PoolStatsPage(resource.Resource):
             if (!cube) return;
             
             // Get the current value
-            const cubeValue = cube.querySelector('.cube-face.front .stat-value').textContent.trim();
+            const cubeValue = cube.querySelector('.cube-face.front .value').textContent.trim();
             
             // Check if the value has changed
             if (cubeValue !== newValue) {{
@@ -627,8 +627,8 @@ class PoolStatsPage(resource.Resource):
                 cubeElement.style.setProperty('--cube-color', color);
                 
                 // Apply color to the value text
-                const frontValue = cube.querySelector('.cube-face.front .stat-value');
-                const backValue = cube.querySelector('.cube-face.back .stat-value');
+                const frontValue = cube.querySelector('.cube-face.front .value');
+                const backValue = cube.querySelector('.cube-face.back .value');
                 frontValue.style.color = color;
                 backValue.style.color = color;
                 
@@ -649,7 +649,7 @@ class PoolStatsPage(resource.Resource):
                     
                     // Reset the rotation after animation
                     setTimeout(() => {{
-                        cubeElement.style.transform = 'rotateX(15deg) rotateY(15deg)';
+                        cubeElement.style.transform = 'rotateX(20deg) rotateY(20deg)';
                         
                         // Update the value after rotation
                         frontValue.textContent = newValue;
@@ -669,10 +669,10 @@ class PoolStatsPage(resource.Resource):
                     const doc = parser.parseFromString(html, 'text/html');
                     
                     // Update each stat cube if value has changed
-                    updateCubeValue('block-number-cube', doc.getElementById('block-number-cube').querySelector('.cube-face.front .stat-value').textContent.trim());
-                    updateCubeValue('time-since-share-cube', doc.getElementById('time-since-share-cube').querySelector('.cube-face.front .stat-value').textContent.trim());
-                    updateCubeValue('valid-shares-cube', doc.getElementById('valid-shares-cube').querySelector('.cube-face.front .stat-value').textContent.trim());
-                    updateCubeValue('mining-difficulty-cube', doc.getElementById('mining-difficulty-cube').querySelector('.cube-face.front .stat-value').textContent.trim());
+                    updateCubeValue('block-number-cube', doc.getElementById('block-number-cube').querySelector('.cube-face.front .value').textContent.trim());
+                    updateCubeValue('time-since-share-cube', doc.getElementById('time-since-share-cube').querySelector('.cube-face.front .value').textContent.trim());
+                    updateCubeValue('valid-shares-cube', doc.getElementById('valid-shares-cube').querySelector('.cube-face.front .value').textContent.trim());
+                    updateCubeValue('mining-difficulty-cube', doc.getElementById('mining-difficulty-cube').querySelector('.cube-face.front .value').textContent.trim());
                 }});
         }}, 5000);
         
@@ -682,7 +682,7 @@ class PoolStatsPage(resource.Resource):
             const statCubes = document.querySelectorAll('.stat-cube');
             
             statCubes.forEach(cube => {{
-                const valueElement = cube.querySelector('.cube-face.front .stat-value');
+                const valueElement = cube.querySelector('.cube-face.front .value');
                 if (valueElement) {{
                     // Always use blue color
                     const color = '#0066cc';
@@ -700,8 +700,8 @@ class PoolStatsPage(resource.Resource):
                     }});
                     
                     // Apply color to the value text
-                    const frontValue = cube.querySelector('.cube-face.front .stat-value');
-                    const backValue = cube.querySelector('.cube-face.back .stat-value');
+                    const frontValue = cube.querySelector('.cube-face.front .value');
+                    const backValue = cube.querySelector('.cube-face.back .value');
                     if (frontValue) frontValue.style.color = color;
                     if (backValue) backValue.style.color = color;
                 }}
