@@ -635,8 +635,8 @@ class PoolStatsPage(resource.Resource):
             
             // Check if the value has changed
             if (cubeValue !== newValue) {{
-                // Always use blue color
-                const color = '#0066cc';
+                // Use orange color for block height cube, blue for others
+                const color = cubeId === 'block-number-cube' ? '#FF8000' : '#0066cc';
                 
                 // Get all cube elements
                 const cubeElement = cube.querySelector('.cube');
@@ -656,7 +656,7 @@ class PoolStatsPage(resource.Resource):
                 frontValue.style.color = color;
                 backValue.style.color = color;
                 
-                // Apply rotation effect for block number cube
+                // Apply rotation effect for all cubes
                 const rotateX = Math.random() * 360;
                 const rotateY = Math.random() * 360;
                 const rotateZ = Math.random() * 360;
@@ -692,7 +692,7 @@ class PoolStatsPage(resource.Resource):
                 }});
         }}, 5000);
         
-        // Initialize all cubes with the correct color based on even/odd value
+        // Initialize all cubes with the correct color
         document.addEventListener('DOMContentLoaded', function() {{
             // Get all stat cubes
             const statCubes = document.querySelectorAll('.stat-cube');
@@ -700,20 +700,20 @@ class PoolStatsPage(resource.Resource):
             statCubes.forEach(cube => {{
                 const valueElement = cube.querySelector('.cube-face.front .value');
                 if (valueElement) {{
-                    // Always use blue color
-                    const color = '#0066cc';
+                    // Use orange for block height cube, blue for others
+                    const color = cube.id === 'block-number-cube' ? '#FF8000' : '#0066cc';
                     
                     // Get all cube elements
                     const cubeElement = cube.querySelector('.cube');
-                    if (cubeElement) {{
-                        cubeElement.style.setProperty('--cube-color', color);
-                    }}
-                    
-                    // Apply color to all faces
                     const allFaces = cube.querySelectorAll('.cube-face');
+                    
+                    // Apply color to all faces and borders
                     allFaces.forEach(face => {{
                         face.style.borderColor = color;
                     }});
+                    
+                    // Apply color to the cube itself
+                    cubeElement.style.setProperty('--cube-color', color);
                     
                     // Apply color to the value text
                     const frontValue = cube.querySelector('.cube-face.front .value');
