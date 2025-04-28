@@ -559,7 +559,7 @@ class PoolStatsPage(resource.Resource):
                                     const sender = row.cells[1].textContent.trim();
                                     const method = row.cells[2].textContent.trim();
                                     const params = row.cells[3].textContent.trim();
-                                    const key = `${timestamp}-${sender}-${method}-${params}`;
+                                    const key = timestamp + '-' + sender + '-' + method + '-' + params;
                                     
                                     // Only add if we don't already have this command
                                     if (!uniqueCommands.has(key)) {{
