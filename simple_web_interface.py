@@ -296,10 +296,28 @@ class PoolStatsPage(resource.Resource):
         
         # Get miner agent if available
         miner_agent = "Unknown"
+        
+        # First check if it's directly in worker stats
         for worker, stats in worker_stats.items():
             if stats.get('active', False) and 'agent' in stats:
                 miner_agent = stats.get('agent', 'Unknown')
                 break
+        
+        # If not found, check command history for mining.subscribe messages
+        if miner_agent == "Unknown":
+            for cmd in self.factory.stats.get_stratum_command_history():
+                if cmd.get('method') == 'mining.subscribe' and cmd.get('sender') == 'miner' and cmd.get('params'):
+                    try:
+                        # The first parameter of mining.subscribe is the miner agent
+                        if isinstance(cmd['params'], list) and len(cmd['params']) > 0:
+                            agent_str = str(cmd['params'][0])
+                            if agent_str and agent_str != "None":
+                                miner_agent = agent_str
+                                # If it's a Bitaxe miner, prioritize it
+                                if "bitaxe" in agent_str.lower():
+                                    break
+                    except Exception as e:
+                        logging.error(f"Error extracting miner agent from command history: {str(e)}")
         
         # Create HTML directly
         html = f"""<!DOCTYPE html>

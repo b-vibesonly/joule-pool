@@ -130,6 +130,18 @@ class StratumProtocol(Protocol):
             # Fixed extranonce2_size for simplicity
             extranonce2_size = 4
             
+            # Extract miner agent from params if available
+            miner_agent = "Unknown"
+            if params and len(params) > 0:
+                # The first parameter should be the miner agent string
+                if params[0]:
+                    miner_agent = str(params[0])
+                    # Log the miner agent with special attention to Bitaxe miners
+                    if "bitaxe" in miner_agent.lower():
+                        logger.info(f"Bitaxe miner detected! Agent: {miner_agent}")
+                    else:
+                        logger.info(f"Miner agent for {self.client_id}: {miner_agent}")
+            
             # Prepare response
             response = [
                 [
@@ -144,7 +156,7 @@ class StratumProtocol(Protocol):
             self.send_result(message_id, response)
             
             # Add client to the factory's client list
-            self.factory.add_client(self)
+            self.factory.add_client(self, miner_agent)
             
             # Send initial difficulty
             self.send_difficulty(self.difficulty)
@@ -852,13 +864,13 @@ class StratumFactory(Factory):
         self.extranonce1_counter += 1
         return binascii.hexlify(struct.pack('<I', self.extranonce1_counter)).decode()
     
-    def add_client(self, client):
+    def add_client(self, client, miner_agent="Unknown"):
         """Add a client to the factory"""
         self.clients[client.client_id] = client
         logger.info(f"Client added: {client.client_id}, total clients: {len(self.clients)}")
         
         # Add client to statistics
-        self.stats.add_client(client.client_id, client.worker_name)
+        self.stats.add_client(client.client_id, client.worker_name, miner_agent)
     
     def remove_client(self, client):
         """Remove a client from the factory"""
