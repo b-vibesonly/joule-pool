@@ -65,6 +65,7 @@ class PoolStatsPage(resource.Resource):
         self.factory = factory
         self.last_difficulty = 1.0
         self.difficulty_history = []  # Store recent difficulty values
+        self.last_miner_agent = "Unknown"  # Store the last known miner agent
         
     def get_latest_difficulty_from_logs(self):
         """Extract the latest mining difficulty from log messages"""
@@ -301,6 +302,7 @@ class PoolStatsPage(resource.Resource):
         for worker, stats in worker_stats.items():
             if stats.get('active', False) and 'agent' in stats:
                 miner_agent = stats.get('agent', 'Unknown')
+                self.last_miner_agent = miner_agent  # Store for future use
                 break
         
         # If not found, check command history for mining.subscribe messages
@@ -313,11 +315,17 @@ class PoolStatsPage(resource.Resource):
                             agent_str = str(cmd['params'][0])
                             if agent_str and agent_str != "None":
                                 miner_agent = agent_str
+                                self.last_miner_agent = miner_agent  # Store for future use
                                 # If it's a Bitaxe miner, prioritize it
                                 if "bitaxe" in agent_str.lower():
                                     break
                     except Exception as e:
                         logging.error(f"Error extracting miner agent from command history: {str(e)}")
+        
+        # If still unknown, use the last known agent if available
+        if miner_agent == "Unknown" and self.last_miner_agent != "Unknown":
+            miner_agent = self.last_miner_agent
+            logging.info(f"Using cached miner agent: {miner_agent}")
         
         # Create HTML directly
         html = f"""<!DOCTYPE html>
@@ -683,6 +691,18 @@ class PoolStatsPage(resource.Resource):
                     // Parse the HTML
                     const parser = new DOMParser();
                     const doc = parser.parseFromString(html, 'text/html');
+                    
+                    // Update miner agent if it's not "Unknown"
+                    const newAgentText = doc.querySelector('.card h2').textContent;
+                    const currentAgentText = document.querySelector('.card h2').textContent;
+                    
+                    if (newAgentText.includes('Miner Agent: Unknown') && !currentAgentText.includes('Miner Agent: Unknown')) {{
+                        // Keep the current agent if the new one is Unknown
+                        console.log("Keeping current agent value");
+                    }} else if (!newAgentText.includes('Miner Agent: Unknown')) {{
+                        // Update only if the new agent is not Unknown
+                        document.querySelector('.card h2').innerHTML = doc.querySelector('.card h2').innerHTML;
+                    }}
                     
                     // Update each stat cube if value has changed
                     updateCubeValue('block-number-cube', doc.getElementById('block-number-cube').querySelector('.cube-face.front .value').textContent.trim());
